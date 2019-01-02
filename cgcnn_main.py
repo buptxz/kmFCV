@@ -91,7 +91,7 @@ else:
     best_mae_error = 0.
 
 
-def main():
+def cgcnn():
     global args, best_mae_error
     try:
         remove_checkpoint()
@@ -141,7 +141,7 @@ def main():
 
             print('{} of {} fold \r'.format(i+1, k))
             build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
-    elif args.validation == 'fv':
+    elif args.validation == 'fcv':
         # k step forward validation
         k=args.k
         minimum_ratio=0.1
@@ -589,4 +589,4 @@ def adjust_learning_rate(optimizer, epoch, k):
 
 
 if __name__ == '__main__':
-    main()
+    cgcnn()

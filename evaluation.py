@@ -13,6 +13,7 @@ import numpy as np
 import os
 import sys
 import csv
+import subprocess
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
@@ -45,18 +46,8 @@ from pymatgen.io.ase import AseAtomsAdaptor
 
 from ase.io import read
 
-# set the memory usage
-from keras.backend.tensorflow_backend import set_session
-import tensorflow as tf
-
-tf_config = tf.ConfigProto()
-tf_config.gpu_options.allow_growth = True
-set_session(tf.Session(config=tf_config))
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-tf.logging.set_verbosity(tf.logging.ERROR)
-
 parser = argparse.ArgumentParser(description='kmFCV')
-parser.add_argument('--data_path', default='data',
+parser.add_argument('--data-path', default='data',
                     help='dataset options, started with the path to root dir, '
                     'then other options')
 parser.add_argument('--demo', action='store_true', 
@@ -69,7 +60,7 @@ parser.add_argument('--feature', choices=['magpie', 'composition', 'ptr'],
                     default='magpie', help='feature name (default: magpie)')
 parser.add_argument('--validation', choices=['cv', 'fcv'],
                     default='cv', help='validation method (default: cv)')                
-parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcn'],
+parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn'],
                     default='rf', help='model name (default: rf)')
 parser.add_argument('-k', default=5, type=int, metavar='N',
                     help='k value (default: 5)')
@@ -77,60 +68,73 @@ parser.add_argument('-m', default=1, type=int, metavar='N',
                     help='m value (default: 1)')
 
 
-args = parser.parse_args(sys.argv[1:])
-data_folder = args.data_path
-dataset = args.dataset
-pred_property = args.property
-feature = args.feature
-validation_method = args.validation
-ml_method = args.model
-quick_demo = args.demo
-k = args.k
-m = args.m
+arguments = parser.parse_args(sys.argv[1:])
+data_folder = arguments.data_path
+dataset = arguments.dataset
+pred_property = arguments.property
+feature = arguments.feature
+validation_method = arguments.validation
+ml_method = arguments.model
+quick_demo = arguments.demo
+k = arguments.k
+m = arguments.m
 
 def main():
-    global args
 
     validation_methods = {
         'cv': cv,
         'fcv': fcv,
     }
 
-    y = None
-    try:
-        y = np.load('{}/features/{}_{}_y.npy'.format(data_folder, dataset, pred_property))
-    except:
-        pass
+    print('------------------------------------------------------------------------------------------')
+    print('{} dataset, {} property, {} feature, {} method, {} validation'.format(dataset, pred_property, feature, ml_method, validation_method))
+    print('k = {}'.format(k))
+    if validation_method == 'fcv':
+        print('m = {}'.format(m))
+    print('------------------------------------------------------------------------------------------')
     
-    if y is not None:
+    if ml_method == 'cgcnn':
+        subprocess.run(['python', 'cgcnn_main.py', data_folder, '--validation', validation_method, '-k', str(k)])
+    else:
+        y = None
         try:
-            X = pd.read_csv('{}/features/{}_{}_{}_X.csv'.format(data_folder, dataset, pred_property, feature))
+            y = np.load('{}/features/{}_{}_y.npy'.format(data_folder, dataset, pred_property))
         except:
-            X = np.load('{}/features/{}_{}_{}_X.npy'.format(data_folder, dataset, pred_property, feature))
+            pass
         
-        if quick_demo:
-            if isinstance(X, pd.DataFrame):
-                X = X.head(1000)
-            else:
-                X = X[:1000]
-            y = y[:1000]
+        if y is not None:
+            try:
+                X = pd.read_csv('{}/features/{}_{}_{}_X.csv'.format(data_folder, dataset, pred_property, feature))
+            except:
+                X = np.load('{}/features/{}_{}_{}_X.npy'.format(data_folder, dataset, pred_property, feature))
+            
+            if quick_demo:
+                if isinstance(X, pd.DataFrame):
+                    X = X.head(1000)
+                else:
+                    X = X[:1000]
+                y = y[:1000]
         
-        print('{} dataset, {} property, {} feature, {} method, {} validation'.format(dataset, pred_property, feature, ml_method, validation_method))
-        print('k = {}'.format(k))
-        if validation_method == 'fcv':
-            print('m = {}'.format(m)) 
-        
-        if ml_method == '1nn':
-            validation_methods[validation_method](KNeighborsRegressor(1, n_jobs=-1), X, y)
+            # set the memory usage
+            from keras.backend.tensorflow_backend import set_session
+            import tensorflow as tf
+            tf_config = tf.ConfigProto()
+            tf_config.gpu_options.allow_growth = True
+            set_session(tf.Session(config=tf_config))
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+            tf.logging.set_verbosity(tf.logging.ERROR)
 
-        if ml_method == 'rf':
-            validation_methods[validation_method](RandomForestRegressor(100, max_features=10, n_jobs=-1), X, y)
-        
-        if ml_method == 'mlp':
-            validation_methods[validation_method](mlp, X, y, shape=X.shape[1])
+            if ml_method == '1nn':
+                validation_methods[validation_method](KNeighborsRegressor(1, n_jobs=-1), X, y)
 
-        if ml_method == 'cnn':
-            validation_methods[validation_method](cnn, X, y, shape=(X.shape[1], X.shape[2], X.shape[3]))
+            if ml_method == 'rf':
+                validation_methods[validation_method](RandomForestRegressor(100, max_features=10, n_jobs=-1), X, y)
+            
+            if ml_method == 'mlp':
+                validation_methods[validation_method](mlp, X, y, shape=X.shape[1])
+
+            if ml_method == 'cnn':
+                validation_methods[validation_method](cnn, X, y, shape=(X.shape[1], X.shape[2], X.shape[3]))
 
 
 # ## 1. Get data (Material Project, icsd subset of oqmd, Superconductivity)
