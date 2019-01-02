@@ -1,0 +1,10 @@
+numpy 
+scipy
+pandas
+scikit-learn
+pymatgen
+matminer
+ase
+tensorflow
+keras
+pybtex
