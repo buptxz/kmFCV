@@ -58,43 +58,49 @@ parser.add_argument('--property', choices=['formation_energy', 'band_gap', 'Tc']
                     default='formation_energy', help='property name (default: formation_energy)')
 parser.add_argument('--feature', choices=['magpie', 'composition', 'ptr'],
                     default='magpie', help='feature name (default: magpie)')
-parser.add_argument('--validation', choices=['cv', 'fcv'],
-                    default='cv', help='validation method (default: cv)')                
 parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn'],
                     default='rf', help='model name (default: rf)')
+parser.add_argument('--validation', choices=['cv', 'fcv'],
+                    default='cv', help='validation method (default: cv)')                
 parser.add_argument('-k', default=5, type=int, metavar='N',
                     help='k value (default: 5)')
 parser.add_argument('-m', default=1, type=int, metavar='N',
                     help='m value (default: 1)')
 
-
-arguments = parser.parse_args(sys.argv[1:])
-data_folder = arguments.data_path
-dataset = arguments.dataset
-pred_property = arguments.property
-feature = arguments.feature
-validation_method = arguments.validation
-ml_method = arguments.model
-quick_demo = arguments.demo
-k = arguments.k
-m = arguments.m
+args = parser.parse_args(sys.argv[1:])
+data_folder = args.data_path
+dataset = args.dataset
+pred_property = args.property
+feature = args.feature
+ml_method = args.model
+quick_demo = args.demo
+validation_type = args.validation
+k = args.k
+m = args.m
+if validation_type == 'cv':
+    validation_method = '{}_fold_{}'.format(k, validation_type)
+else:
+    validation_method = '{}_fold_{}_step_{}'.format(k, m, validation_type)
 
 def main():
-
-    validation_methods = {
+    validation_types = {
         'cv': cv,
         'fcv': fcv,
     }
 
-    print('------------------------------------------------------------------------------------------')
+    print('-----------------------------------------------------------------------------------------------')
     print('{} dataset, {} property, {} feature, {} method, {} validation'.format(dataset, pred_property, feature, ml_method, validation_method))
-    print('k = {}'.format(k))
-    if validation_method == 'fcv':
-        print('m = {}'.format(m))
-    print('------------------------------------------------------------------------------------------')
+    if quick_demo:
+        print('Demo mode.')
+    # print('k = {}'.format(k))
+    # if args.validation == 'fcv':
+    #     print('m = {}'.format(m))
+    print('-----------------------------------------------------------------------------------------------')
     
     if ml_method == 'cgcnn':
-        subprocess.run(['python', 'cgcnn_main.py', data_folder, '--validation', validation_method, '-k', str(k)])
+        subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0) , '{}/cgcnn_{}'.format(data_folder, pred_property), '--validation', validation_type, '-k', str(k)])
+        result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
+        evaluation_plot(result.target, result.prediction)
     else:
         y = None
         try:
@@ -125,16 +131,16 @@ def main():
             tf.logging.set_verbosity(tf.logging.ERROR)
 
             if ml_method == '1nn':
-                validation_methods[validation_method](KNeighborsRegressor(1, n_jobs=-1), X, y)
+                validation_types[validation_type](KNeighborsRegressor(1, n_jobs=-1), X, y, k=k)
 
             if ml_method == 'rf':
-                validation_methods[validation_method](RandomForestRegressor(100, max_features=10, n_jobs=-1), X, y)
+                validation_types[validation_type](RandomForestRegressor(100, max_features=10, n_jobs=-1), X, y)
             
             if ml_method == 'mlp':
-                validation_methods[validation_method](mlp, X, y, shape=X.shape[1])
+                validation_types[validation_type](mlp, X, y, shape=X.shape[1])
 
             if ml_method == 'cnn':
-                validation_methods[validation_method](cnn, X, y, shape=(X.shape[1], X.shape[2], X.shape[3]))
+                validation_types[validation_type](cnn, X, y, shape=(X.shape[1], X.shape[2], X.shape[3]))
 
 
 # ## 1. Get data (Material Project, icsd subset of oqmd, Superconductivity)
@@ -680,7 +686,7 @@ def evaluation_plot(y, cv_prediction, max_value=None):
 # In[ ]:
 
 
-def cv(original_model, X, y, k=100, shape=None):
+def cv(original_model, X, y, shape=None):
     if isinstance(X, pd.DataFrame):
         X = X.values
     

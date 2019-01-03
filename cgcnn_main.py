@@ -29,6 +29,8 @@ parser = argparse.ArgumentParser(description='Crystal Graph Convolutional Neural
 parser.add_argument('data_options', metavar='OPTIONS', nargs='+',
                     help='dataset options, started with the path to root dir, '
                     'then other options')
+parser.add_argument('--demo', default=0, type=int,
+                    help='Quick demo mode, 1000 samples')
 parser.add_argument('--task', choices=['regression', 'classification'],
                     default='regression', help='complete a regression or '
                     'classification task (default: regression)')
@@ -99,7 +101,11 @@ def cgcnn():
         pass
     root_dir = args.data_options[0]
     id_prop_file = os.path.join(root_dir, 'id_prop.csv')
-    sample_number = len(pd.read_csv(id_prop_file))
+    if args.demo == 1:
+        sample_number = 1000
+        args.epochs = 1
+    else:
+        sample_number = len(pd.read_csv(id_prop_file))
     if args.data_size:
         assert args.data_size <= sample_number, 'Not that many samples!'
         sample_number = args.data_size
@@ -430,7 +436,7 @@ def validate(val_loader, model, criterion, normalizer, test=False, file_name='')
         # measure accuracy and record loss
         if args.task == 'regression':
             mae_error = mae(normalizer.denorm(output.data.cpu()), target)
-            losses.update(loss.data.cpu()[0], target.size(0))
+            losses.update(loss.item(), target.size(0))
             mae_errors.update(mae_error, target.size(0))
             if test:
                 test_pred = normalizer.denorm(output.data.cpu())
@@ -483,10 +489,12 @@ def validate(val_loader, model, criterion, normalizer, test=False, file_name='')
     if test:
         star_label = '**'
         import csv
-        with open('mae_{}.csv'.format(file_name), 'a') as f:
-            writer = csv.writer(f)
-            writer.writerow(['{mae_errors.avg:.4f}'.format(mae_errors=mae_errors)])
-        with open('result_{}.csv'.format(file_name), 'a') as f:
+        # with open('mae_{}.csv'.format(file_name), 'a') as f:
+        #     writer = csv.writer(f)
+        #     writer.writerow(['{mae_errors.avg:.4f}'.format(mae_errors=mae_errors)])
+        if os.path.exists('cgcnn_result.csv'):
+            os.remove('cgcnn_result.csv')
+        with open('cgcnn_result.csv', 'a') as f:
             writer = csv.writer(f)
             for cif_id, target, pred in zip(test_cif_ids, test_targets,
                                             test_preds):
