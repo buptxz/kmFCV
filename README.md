@@ -1,5 +1,5 @@
-# K-fold-m-step Forward Cross-validation (kmFCV)
-K-fold-m-step forward cross-validation. A new approach of evaluating extrapolation performance in materials property prediction.
+# *K*-fold-*m*-step Forward Cross-validation (*km*FCV) for Materials Discovery
+*K*-fold-*m*-step forward cross-validation is a new approach of evaluating extrapolation performance in materials property prediction. THe standard *k*-fold cross-validation falls short on evaluating the prediction performances of models in screening novel materials with desirable properties, wihch usually lie outside the domain of known materials. This project provides a comprehensive benchmarks studies on the extrapolation performances of a variety of prediction models on materials properties. Our results show even though current machine learning models can achieve good results when evaluated with standard cross-validation, their extrapolation power is actually very low as shown by our proposed *km*FCV evaluation method and the proposed extrapolation accuracy.
 
 ##  Prerequisites
 
@@ -13,16 +13,25 @@ This package requires:
 - [ase](https://wiki.fysik.dtu.dk/ase/index.html)
 - [pybtex](https://pybtex.org/)
 
+In directory `kmFCV`, you can test if all the prerequisites are met and show the help messages by:
+
+```bash
+python evaluation.py -h
+```
+
+If no error messages show up, it means that the prerequisites are installed properly.
+
 ## Usage
 
+In directory `kmFCV`, run `evaluation.py` to do cross-validation or forward cross-validation on benchmark datasets and models. 
 
-In directory `kmFCV`, you can evaluate a random forest with magpie feature on Materials Project formation energy dataset:
+For example, without any arguments the pacakge uses the default ones to evaluate a random forest with magpie feature on Materials Project formation energy dataset:
 
 ```bash
 python evaluation.py
 ```
 
-Options:
+All the options:
 - --data-path, feature data path
 - --demo, to enable the demo mode
 - --dataset, dataset name {mp,supercon}
@@ -41,8 +50,8 @@ python evaluation.py --demo --dataset mp --feature ptr --model cnn --validation 
 
 After running, you will get three files in `data/results` directory.
 
-- `.csv`: stores the results in csv.
-- `.pkl`: stores the results in pkl.
-- `.png`: plots the figure.
+- `.csv`: stores the prediction results in csv.
+- `.pkl`: stores the prediction results in pkl.
+- `.png`: plots the prediction figure.
 
-Also, MAE, RMSE, R squared and expolation accuracy will be stored in 'data/results/results.csv' file.
+Also, the MAE, RMSE, R squared and expolation accuracy metrics will be stored in 'data/results/results.csv' file.
