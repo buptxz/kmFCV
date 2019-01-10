@@ -56,10 +56,12 @@ def get_train_val_test_loader(dataset, collate_fn=default_collate,
         assert train_size + val_size + test_size <= total_size
     indices = list(range(total_size))
     train_sampler = SubsetRandomSampler(indices[:train_size])
-    val_sampler = SubsetRandomSampler(
-                    indices[-(val_size+test_size):-test_size])
+    # val_sampler = SubsetRandomSampler(
+    #                 indices[-(val_size+test_size):-test_size])
+    val_sampler = SubsetRandomSampler(indices[train_size:(train_size+val_size)])
     if return_test:
-        test_sampler = SubsetRandomSampler(indices[-test_size:])
+        # test_sampler = SubsetRandomSampler(indices[-test_size:])
+        test_sampler = SubsetRandomSampler(indices[(train_size+val_size):(train_size+val_size+test_size)])
     train_loader = DataLoader(dataset, batch_size=batch_size,
                               sampler=train_sampler,
                               num_workers=num_workers,

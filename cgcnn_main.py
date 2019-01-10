@@ -189,10 +189,18 @@ def cgcnn():
         dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
         train_loader, val_loader, test_loader = get_train_val_test_loader(
             dataset=dataset, collate_fn=collate_fn, batch_size=args.batch_size,
-            train_size=28172, num_workers=args.workers,
+            train_size=1000, num_workers=args.workers,
             val_size=args.val_size, test_size=100,
             pin_memory=args.cuda, return_test=True)
         build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+
+        # dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=123)
+        # train_loader, val_loader, test_loader = get_train_val_test_loader(
+        #     dataset=dataset, collate_fn=collate_fn, batch_size=args.batch_size,
+        #     train_size=2000, num_workers=args.workers,
+        #     val_size=100, test_size=100,
+        #     pin_memory=args.cuda, return_test=True)
+        # build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
 
 def build_model(dataset, collate_fn, train_loader, val_loader, test_loader):
     global args, best_mae_error
@@ -418,24 +426,27 @@ def validate(val_loader, model, criterion, normalizer, test=False, file_name='')
     end = time.time()
     for i, (input, target, batch_cif_ids) in enumerate(val_loader):
         if args.cuda:
-            input_var = (Variable(input[0].cuda(async=True), volatile=True),
-                         Variable(input[1].cuda(async=True), volatile=True),
-                         input[2].cuda(async=True),
-                         [crys_idx.cuda(async=True) for crys_idx in input[3]])
+            with torch.no_grad():
+                input_var = (Variable(input[0].cuda(async=True)),
+                            Variable(input[1].cuda(async=True)),
+                            input[2].cuda(async=True),
+                            [crys_idx.cuda(async=True) for crys_idx in input[3]])
         else:
-            input_var = (Variable(input[0], volatile=True),
-                         Variable(input[1], volatile=True),
-                         input[2],
-                         input[3])
+            with torch.no_grad():
+                input_var = (Variable(input[0]),
+                            Variable(input[1]),
+                            input[2],
+                            input[3])
         if args.task == 'regression':
             target_normed = normalizer.norm(target)
         else:
             target_normed = target.view(-1).long()
         if args.cuda:
-            target_var = Variable(target_normed.cuda(async=True),
-                                  volatile=True)
+            with torch.no_grad():
+                target_var = Variable(target_normed.cuda(async=True))
         else:
-            target_var = Variable(target_normed, volatile=True)
+            with torch.no_grad():
+                target_var = Variable(target_normed)
 
         # compute output
         output = model(*input_var)
