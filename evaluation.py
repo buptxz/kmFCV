@@ -731,7 +731,7 @@ def holdout(original_model, X, y, shape=None):
         model.fit(X_train, y_train)
     else:
         model = original_model(shape)
-        model.fit(X_train, y_train, epochs=epochs, batch_size=128, verbose=1)
+        model.fit(X_train, y_train, epochs=epochs, batch_size=128, verbose=1, validation_data=(X_test, y_test))
 
     evaluation_plot(y_test, model.predict(X_test))
 
