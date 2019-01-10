@@ -27,13 +27,6 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from sklearn.base import BaseEstimator, clone
 from sklearn.neighbors import KNeighborsRegressor
 
-from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D
-from keras.wrappers.scikit_learn import KerasRegressor
-from keras.optimizers import SGD
-from keras import backend as K
-from keras import regularizers
-
 from matminer.data_retrieval.retrieve_MP import MPDataRetrieval
 from matminer.featurizers.conversions import StrToComposition
 from matminer.featurizers.base import MultipleFeaturizer
@@ -58,10 +51,14 @@ parser.add_argument('--property', choices=['formation_energy', 'band_gap', 'Tc']
                     default='formation_energy', help='property name (default: formation_energy)')
 parser.add_argument('--feature', choices=['magpie', 'composition', 'ptr'],
                     default='magpie', help='feature name (default: magpie)')
-parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn'],
+parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn', 'elemnet', 'lstm'],
                     default='rf', help='model name (default: rf)')
-parser.add_argument('--validation', choices=['cv', 'fcv'],
-                    default='cv', help='validation method (default: cv)')                
+parser.add_argument('--epochs', default=30, type=int, metavar='N',
+                    help='epochs to train (default: 30)')
+parser.add_argument('--validation', choices=['cv', 'fcv', 'holdout'],
+                    default='cv', help='validation method (default: cv)')
+parser.add_argument('--split', choices=['random', 'sorted'],
+                    default='random', help='split (default: random)')
 parser.add_argument('-k', default=5, type=int, metavar='N',
                     help='k value (default: 5)')
 parser.add_argument('-m', default=1, type=int, metavar='N',
@@ -73,8 +70,10 @@ dataset = args.dataset
 pred_property = args.property
 feature = args.feature
 ml_method = args.model
+epochs = args.epochs
 quick_demo = args.demo
 validation_type = args.validation
+split = args.split
 k = args.k
 m = args.m
 if validation_type == 'cv':
@@ -82,10 +81,18 @@ if validation_type == 'cv':
 else:
     validation_method = '{}_fold_{}_step_{}'.format(k, m, validation_type)
 
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D, CuDNNLSTM, Input
+from keras.wrappers.scikit_learn import KerasRegressor
+from keras.optimizers import SGD
+from keras import backend as K
+from keras import regularizers
+
 def main():
     validation_types = {
         'cv': cv,
         'fcv': fcv,
+        'holdout': holdout
     }
 
     print('-----------------------------------------------------------------------------------------------')
@@ -139,8 +146,14 @@ def main():
             if ml_method == 'mlp':
                 validation_types[validation_type](mlp, X, y, shape=X.shape[1])
 
+            if ml_method == 'elemnet':
+                validation_types[validation_type](elemnet, X, y, shape=X.shape[1])
+
             if ml_method == 'cnn':
                 validation_types[validation_type](cnn, X, y, shape=(X.shape[1], X.shape[2], X.shape[3]))
+
+            if ml_method == 'lstm':
+                validation_types[validation_type](lstm, X, y, shape=(X.shape[0], X.shape[1]))
 
 
 # ## 1. Get data (Material Project, icsd subset of oqmd, Superconductivity)
@@ -537,9 +550,9 @@ def mlp(input_dim):
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     Dropout(0.5, noise_shape=None, seed=None)
-    model.add(Dense(1, kernel_initializer='normal'))
+    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.001)))
 
-    model.compile(loss="mean_absolute_error", optimizer='Adam')
+    model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
     return model
 
@@ -567,10 +580,24 @@ def elemnet(input_dim):
     model.add(Dense(32, kernel_initializer='normal', activation='relu'))
     model.add(Dense(1, kernel_initializer='normal'))
 
-    model.compile(loss="mean_absolute_error", optimizer='Adam')
+    model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
     return model
 
+def lstm(input_shape):
+    rnn_unit_size = 256
+    dense_unit_size_1 = 128
+    dense_unit_size_2 = 90
+
+    model = Sequential()
+    input_sequences = Input(shape=input_shape)
+    model.add(CuDNNLSTM(rnn_unit_size, return_sequences=False)(input_sequences)) 
+    # x = GlobalAveragePooling1D()(processed_sequences)
+    model.add(Dense(dense_unit_size_1, activation='relu'))
+    model.add(Dense(dense_unit_size_2, activation='relu'))
+    model.add(Dense(1, kernel_initializer='normal'))
+
+    model.compile(optimizer="adam", loss='mean_absolute_error', metrics=['mean_absolute_error'])
 
 # ### CNN
 
@@ -580,8 +607,8 @@ def elemnet(input_dim):
 
 def cnn(input_shape):
     model = Sequential()
-    model.add(Conv2D(96, kernel_size=(3, 3), activation='relu', padding='same', 
-                             input_shape=input_shape, data_format='channels_first'))
+    model.add(Conv2D(96, kernel_size=(3, 3), activation='relu', padding='same',
+                input_shape=input_shape, data_format='channels_first'))
     model.add(Conv2D(96, (5, 5), activation='relu', padding='same'))
     model.add(Dropout(0.25))
     model.add(Conv2D(96, (3, 3), activation='relu'))
@@ -664,10 +691,10 @@ def evaluation_plot(y, cv_prediction, max_value=None):
 
     mae = metrics.mean_absolute_error(y, cv_prediction)
     r2 = metrics.r2_score(y, cv_prediction)
-    mse = metrics.mean_squared_error(y, cv_prediction)
+    rmse = math.sqrt(metrics.mean_squared_error(y, cv_prediction))
     
     ax.set_title('{}, {}, {}, {}, {}'.format(dataset, pred_property, feature, ml_method, validation_method))
-    ax.text(0.5, 0.1, 'MAE: {:.4f} eV/atom\nMSE: {:.4f} eV/atom\n$R^2$:  {:.4f}'.format(mae, mse, r2),
+    ax.text(0.5, 0.1, 'MAE: {:.4f} eV/atom\nRMSE: {:.4f} eV/atom\n$R^2$:  {:.4f}'.format(mae, rmse, r2),
             transform=ax.transAxes,
             bbox={'facecolor': 'w', 'edgecolor': 'k'})
 
@@ -685,6 +712,28 @@ def evaluation_plot(y, cv_prediction, max_value=None):
 
 # In[ ]:
 
+def holdout(original_model, X, y, shape=None):
+    if isinstance(X, pd.DataFrame):
+        X = X.values
+    
+    if split == 'random':
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    else:
+        split_ratio = 0.8
+        split_number = int(split_ratio * len(X))
+        X_train = X[:split_number]
+        X_test = X[split_number:split_number+100]
+        y_train = y[:split_number]
+        y_test = y[split_number:split_number+100]
+    
+    if issubclass(type(original_model), BaseEstimator): 
+        model = clone(original_model)
+        model.fit(X_train, y_train)
+    else:
+        model = original_model(shape)
+        model.fit(X_train, y_train, epochs=epochs, batch_size=128, verbose=1)
+
+    evaluation_plot(y_test, model.predict(X_test))
 
 def cv(original_model, X, y, shape=None):
     if isinstance(X, pd.DataFrame):
