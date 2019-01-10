@@ -185,6 +185,14 @@ def cgcnn():
                                     collate_fn=collate_fn, pin_memory=False)
 
             build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+    elif args.validation == 'holdout':
+        dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
+        train_loader, val_loader, test_loader = get_train_val_test_loader(
+            dataset=dataset, collate_fn=collate_fn, batch_size=args.batch_size,
+            train_size=28172, num_workers=args.workers,
+            val_size=args.val_size, test_size=100,
+            pin_memory=args.cuda, return_test=True)
+        build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
 
 def build_model(dataset, collate_fn, train_loader, val_loader, test_loader):
     global args, best_mae_error

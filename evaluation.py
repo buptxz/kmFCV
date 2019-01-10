@@ -105,7 +105,8 @@ def main():
     print('-----------------------------------------------------------------------------------------------')
     
     if ml_method == 'cgcnn':
-        subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0) , '{}/cgcnn_{}'.format(data_folder, pred_property), '--validation', validation_type, '-k', str(k)])
+        subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0), 
+            '{}/cgcnn_{}'.format(data_folder, pred_property), '--validation', validation_type, '-k', str(k), '--epochs', str(epochs)])
         result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
         evaluation_plot(result.target, result.prediction)
     else:

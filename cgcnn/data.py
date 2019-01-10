@@ -53,7 +53,8 @@ def get_train_val_test_loader(dataset, collate_fn=default_collate,
         assert val_size + test_size < total_size
         print('[Warning] train_size is None, using all training data.')
     else:
-        assert train_size + val_size + test_size <= total_size
+        # assert train_size + val_size + test_size <= total_size
+        print('Using only front part of the data.')
     indices = list(range(total_size))
     train_sampler = SubsetRandomSampler(indices[:train_size])
     val_sampler = SubsetRandomSampler(
