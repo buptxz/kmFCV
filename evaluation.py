@@ -51,7 +51,7 @@ parser.add_argument('--property', choices=['formation_energy', 'band_gap', 'Tc']
                     default='formation_energy', help='property name (default: formation_energy)')
 parser.add_argument('--feature', choices=['magpie', 'composition', 'ptr'],
                     default='magpie', help='feature name (default: magpie)')
-parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn', 'elemnet', 'lstm'],
+parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn', 'elemnet', 'svr'],
                     default='rf', help='model name (default: rf)')
 parser.add_argument('--epochs', default=30, type=int, metavar='N',
                     help='epochs to train (default: 30)')
@@ -143,6 +143,12 @@ def main():
 
             if ml_method == 'rf':
                 validation_types[validation_type](RandomForestRegressor(100, max_features=10, n_jobs=-1), X, y)
+
+            if ml_method == 'svr':
+                validation_types[validation_type](GridSearchCV(SVR(gamma='scale'),
+                                                                param_grid=dict(C=[0.1], epsilon =[0.01, 0.1]),
+                                                                scoring='neg_mean_absolute_error', verbose=2, cv=ShuffleSplit(5), n_jobs=-1), 
+                                                                X, y)
             
             if ml_method == 'mlp':
                 validation_types[validation_type](mlp, X, y, shape=X.shape[1])
@@ -551,10 +557,10 @@ def mlp(input_dim):
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     Dropout(0.5, noise_shape=None, seed=None)
-    # model.add(Dense(1, kernel_initializer='normal'))
+    model.add(Dense(1, kernel_initializer='normal'))
     model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
 
-    model.compile(loss='mean_absolute_error', metrics=['mean_absolute_error'], optimizer='Adam')
+    model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
     return model
 
@@ -580,7 +586,7 @@ def elemnet(input_dim):
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(32, kernel_initializer='normal', activation='relu'))
-    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
+    model.add(Dense(1, kernel_initializer='normal'))
 
     model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
@@ -775,7 +781,7 @@ def cv(original_model, X, y, shape=None):
 # In[ ]:
 
 
-def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=None, reverse=False, shape=None):
+def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=False, shape=None, light=True):
     if isinstance(X, pd.DataFrame):
         X = X.values
         
@@ -797,7 +803,7 @@ def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=None, reverse=Fal
     prediction = []
     max_value = []
     
-    for split in range(fold_sample_number, sample_number, fold_sample_number):
+    for split in range(fold_sample_number, sample_number, fold_sample_number if not light else fold_sample_number*10):
         if split < minimum_sample_number:
             continue
         if split > maxmum_sample_number:
