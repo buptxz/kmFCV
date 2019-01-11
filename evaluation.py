@@ -551,9 +551,10 @@ def mlp(input_dim):
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     Dropout(0.5, noise_shape=None, seed=None)
-    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.001)))
+    # model.add(Dense(1, kernel_initializer='normal'))
+    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
 
-    model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
+    model.compile(loss='mean_absolute_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
     return model
 
@@ -579,7 +580,7 @@ def elemnet(input_dim):
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(32, kernel_initializer='normal', activation='relu'))
-    model.add(Dense(1, kernel_initializer='normal'))
+    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
 
     model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
