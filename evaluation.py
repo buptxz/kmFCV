@@ -55,10 +55,12 @@ parser.add_argument('--model', choices=['1nn', 'rf', 'mlp', 'cnn', 'cgcnn', 'ele
                     default='rf', help='model name (default: rf)')
 parser.add_argument('--epochs', default=30, type=int, metavar='N',
                     help='epochs to train (default: 30)')
-parser.add_argument('--validation', choices=['cv', 'fcv', 'holdout'],
+parser.add_argument('--validation', choices=['cv', 'fcv', 'holdout', 'iecv'],
                     default='cv', help='validation method (default: cv)')
 parser.add_argument('--split', choices=['random', 'sorted'],
                     default='random', help='split (default: random)')
+parser.add_argument('--hybrid', action='store_true', 
+                    help='hybrid traning mode')
 parser.add_argument('-k', default=5, type=int, metavar='N',
                     help='k value (default: 5)')
 parser.add_argument('-m', default=1, type=int, metavar='N',
@@ -72,6 +74,7 @@ feature = args.feature
 ml_method = args.model
 epochs = args.epochs
 quick_demo = args.demo
+hybrid = args.hybrid
 validation_type = args.validation
 split = args.split
 k = args.k
@@ -82,7 +85,7 @@ else:
     validation_method = '{}_fold_{}_step_{}'.format(k, m, validation_type)
 
 from keras.models import Sequential
-from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D, CuDNNLSTM, Input
+from keras.layers import Dense, Dropout, Flatten, Conv2D, MaxPooling2D, CuDNNLSTM, Input, BatchNormalization, Activation
 from keras.wrappers.scikit_learn import KerasRegressor
 from keras.optimizers import SGD
 from keras import backend as K
@@ -92,7 +95,8 @@ def main():
     validation_types = {
         'cv': cv,
         'fcv': fcv,
-        'holdout': holdout
+        'holdout': holdout,
+        'iecv': iecv
     }
 
     print('-----------------------------------------------------------------------------------------------')
@@ -105,7 +109,7 @@ def main():
     print('-----------------------------------------------------------------------------------------------')
     
     if ml_method == 'cgcnn':
-        subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0), 
+        subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0), '--hybrid', str(1) if hybrid else str(0), 
             '{}/cgcnn_{}'.format(data_folder, pred_property), '--validation', validation_type, '-k', str(k), '--epochs', str(epochs)])
         result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
         evaluation_plot(result.target, result.prediction)
@@ -130,12 +134,14 @@ def main():
                 y = y[:1000]
         
             # set the memory usage
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+            # import logging
+            # logging.getLogger("tensorflow").setLevel(logging.WARNING)
             from keras.backend.tensorflow_backend import set_session
             import tensorflow as tf
             tf_config = tf.ConfigProto()
             tf_config.gpu_options.allow_growth = True
             set_session(tf.Session(config=tf_config))
-            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
             tf.logging.set_verbosity(tf.logging.ERROR)
 
             if ml_method == '1nn':
@@ -558,13 +564,13 @@ def mlp(input_dim):
     model.add(Dense(128, kernel_initializer='normal', activation='relu'))
     Dropout(0.5, noise_shape=None, seed=None)
     model.add(Dense(1, kernel_initializer='normal'))
-    model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
+    # model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.0005)))
 
     model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
     return model
 
-def elemnet(input_dim):
+def elemnet(input_dim, l1_reg=True):
     model = Sequential()
     model.add(Dense(1024, input_dim=input_dim, kernel_initializer='normal', activation='relu'))
     model.add(Dense(1024, kernel_initializer='normal', activation='relu'))
@@ -586,7 +592,13 @@ def elemnet(input_dim):
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(64, kernel_initializer='normal', activation='relu'))
     model.add(Dense(32, kernel_initializer='normal', activation='relu'))
-    model.add(Dense(1, kernel_initializer='normal'))
+    # model.add(Dense(32, kernel_initializer='normal', use_bias=False))
+    # model.add(BatchNormalization())
+    # model.add(Activation("relu"))
+    if not l1_reg:
+        model.add(Dense(1, kernel_initializer='normal'))
+    else:
+        model.add(Dense(1, kernel_initializer='normal', activity_regularizer=regularizers.l1(0.001)))
 
     model.compile(loss='mean_squared_error', metrics=['mean_absolute_error'], optimizer='Adam')
     
@@ -715,6 +727,8 @@ def evaluation_plot(y, cv_prediction, max_value=None):
     fig.tight_layout()
     fig.savefig(file_name + '.png', dpi=640)
 
+    return mae, rmse, r2
+
 
 # ### K-fold Cross Validation
 
@@ -738,12 +752,29 @@ def holdout(original_model, X, y, shape=None):
         model = clone(original_model)
         model.fit(X_train, y_train)
     else:
-        model = original_model(shape)
-        model.fit(X_train, y_train, epochs=epochs, batch_size=128, verbose=1, validation_data=(X_test, y_test))
+        model = original_model(shape, l1_reg=False)
+        model.fit(X_train, y_train, epochs=20, batch_size=128, verbose=1, validation_data=(X_test, y_test))
+        model.save_weights('my_model_weights.h5')
+        model = original_model(shape, l1_reg=True)
+        model.load_weights('my_model_weights.h5')
+        model.fit(X_train, y_train, epochs=50, batch_size=128, verbose=1, validation_data=(X_test, y_test))
+
 
     evaluation_plot(y_test, model.predict(X_test))
 
-def cv(original_model, X, y, shape=None):
+def hybrid_train(original_model, X_train, y_train, shape):
+    reg_sched = 0.2
+    start_epoch = math.floor(epochs * reg_sched)
+
+    model = original_model(shape, l1_reg=False)
+    model.fit(X_train, y_train, epochs=5, batch_size=128, verbose=0)
+    model.save_weights('my_model_weights.h5')
+    model = original_model(shape, l1_reg=True)
+    model.load_weights('my_model_weights.h5')
+    model.fit(X_train, y_train, epochs=30, batch_size=128, verbose=0)
+    return model
+
+def cv(original_model, X, y, shape=None, k=k):
     if isinstance(X, pd.DataFrame):
         X = X.values
     
@@ -762,10 +793,15 @@ def cv(original_model, X, y, shape=None):
         for i, (train, test) in enumerate(kfold.split(X, y)):
             sys.stdout.write('{} of {} fold \r'.format(i+1, k))
             sys.stdout.flush()
-            # create model
-            model = original_model(shape)
-            model.fit(X[train], y[train], epochs=30, batch_size=128, verbose=0)
-            #validation_data=(X[test], y[test])
+
+            # # train model
+
+            if not hybrid:
+                model = original_model(shape)
+                model.fit(X[train], y[train], epochs=epochs, batch_size=128, verbose=0)
+                #validation_data=(X[test], y[test])
+            else:
+                model = hybrid_train(original_model, X[train], y[train], shape)
     
             y_random.extend(y[test])
             cv_prediction.extend(model.predict(X[test]))
@@ -773,7 +809,7 @@ def cv(original_model, X, y, shape=None):
         
         y = y_random
     
-    evaluation_plot(y, cv_prediction)
+    return evaluation_plot(y, cv_prediction)
 
 
 # ### K-fold Forward/Backward Validation
@@ -781,7 +817,7 @@ def cv(original_model, X, y, shape=None):
 # In[ ]:
 
 
-def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=False, shape=None, light=True):
+def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=False, shape=None, lite=False, k=k):
     if isinstance(X, pd.DataFrame):
         X = X.values
         
@@ -803,7 +839,7 @@ def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=Fal
     prediction = []
     max_value = []
     
-    for split in range(fold_sample_number, sample_number, fold_sample_number if not light else fold_sample_number*10):
+    for split in range(fold_sample_number, sample_number, fold_sample_number if not lite else fold_sample_number*10):
         if split < minimum_sample_number:
             continue
         if split > maxmum_sample_number:
@@ -829,8 +865,11 @@ def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=Fal
             model = clone(original_model)
             model.fit(X_train, y_train)
         else:
-            model = original_model(shape)
-            model.fit(X_train, y_train, epochs=30, batch_size=128, verbose=0)
+            if not hybrid:
+                model = original_model(shape)
+                model.fit(X_train, y_train, epochs=epochs, batch_size=128, verbose=0)
+            else:
+                model = hybrid_train(original_model, X_train, y_train, shape)
         y_pred = model.predict(X_val)
     
         label.extend(list(y_val))
@@ -840,7 +879,7 @@ def fcv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=Fal
         if not issubclass(type(original_model), BaseEstimator):
             K.clear_session()
     
-    evaluation_plot(label, prediction, max_value)
+    return evaluation_plot(label, prediction, max_value)
 
 def bcv(model, X, y, k=100, minimum_ratio=0.1, maximum_ratio=0.9, shape=None):
     fcv(model, X, y, k, minimum_ratio, maximum_ratio, reverse=True, shape=shape)
@@ -875,6 +914,15 @@ def fbv(model, X, y, training_start=0.1, training_end=0.9, k=None, shape=None):
     y_pred = np.concatenate((y_val_before_pred, y_train_pred, y_val_after_pred), axis=0)
 
     evaluation_plot(y_label, y_pred)
+
+def iecv(original_model, X, y, minimum_ratio=0.1, maximum_ratio=0.95, reverse=False, shape=None, lite=True):
+    cv_result = cv(original_model, X, y, shape, k=5)
+    fcv_result = fcv(original_model, X, y, minimum_ratio, maximum_ratio, reverse, shape, lite, k=100)
+    print(cv_result[0])
+    print(fcv_result[0])
+    alpha = 0.5
+    beta = 1 - alpha
+    print(math.sqrt(alpha * cv_result[0]**2 + beta * fcv_result[0]**2))
 
 
 # ## 5. Leave one out cross validation/K fold forward step cross validation

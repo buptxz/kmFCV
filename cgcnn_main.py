@@ -31,6 +31,8 @@ parser.add_argument('data_options', metavar='OPTIONS', nargs='+',
                     'then other options')
 parser.add_argument('--demo', default=0, type=int,
                     help='Quick demo mode, 1000 samples')
+parser.add_argument('--hybrid', default=0, type=int,
+                    help='Hybrid training mode')
 parser.add_argument('--task', choices=['regression', 'classification'],
                     default='regression', help='complete a regression or '
                     'classification task (default: regression)')
@@ -121,70 +123,9 @@ def cgcnn():
             pin_memory=args.cuda, return_test=True)
         build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
     elif args.validation == 'cv':
-        seed = 7
-        dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=seed)
-        k = args.k
-
-        np.random.seed(seed)
-        kfold = KFold(n_splits=k, shuffle=True, random_state=seed)
-
-        for i, (train_indices, test_indices) in enumerate(kfold.split(X = np.zeros((sample_number, 1)))):
-            train_sampler = SubsetRandomSampler(train_indices)
-            val_sampler = SubsetRandomSampler(list())
-            test_sampler = SubsetRandomSampler(test_indices)
-            train_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=train_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-            val_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=val_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-            test_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=test_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-
-            print('{} of {} fold \r'.format(i+1, k))
-            build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+        cv(sample_number, collate_fn)
     elif args.validation == 'fcv':
-        # k step forward validation
-        k=args.k
-        minimum_ratio=0.1
-        maximum_ratio=1 - 1 / k
-        fold_sample_number = math.floor(sample_number / k)
-        minimum_sample_number = round(minimum_ratio * sample_number)
-        maxmum_sample_number = round(maximum_ratio * sample_number)
-        dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
-
-        for i, split in enumerate(range(fold_sample_number, sample_number, fold_sample_number)):
-            if split < minimum_sample_number:
-                continue
-            if split > maxmum_sample_number:
-                break
-            
-            print("Training end in %s out of %s \r" % (split, sample_number))
-
-            total_size = len(dataset)
-            indices = list(range(total_size))
-            train_sampler = SubsetRandomSampler(indices[:split])
-            val_sampler = SubsetRandomSampler(list())
-            test_sampler = SubsetRandomSampler(indices[split:split+fold_sample_number])
-
-            train_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=train_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-            val_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=val_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-            test_loader = DataLoader(dataset, batch_size=args.batch_size,
-                                    sampler=test_sampler,
-                                    num_workers=args.workers,
-                                    collate_fn=collate_fn, pin_memory=False)
-
-            build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+        fcv(sample_number, collate_fn)
     elif args.validation == 'holdout':
         dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
         train_loader, val_loader, test_loader = get_train_val_test_loader(
@@ -201,6 +142,77 @@ def cgcnn():
         #     val_size=100, test_size=100,
         #     pin_memory=args.cuda, return_test=True)
         # build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+    elif args.validation == 'iecv':
+        cv(sample_number, collate_fn)
+        fcv(sample_number, collate_fn, lite=True)
+        
+def cv(sample_number, collate_fn):
+    global args, best_mae_error
+    seed = 7
+    dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=seed)
+    k = args.k
+
+    np.random.seed(seed)
+    kfold = KFold(n_splits=k, shuffle=True, random_state=seed)
+
+    for i, (train_indices, test_indices) in enumerate(kfold.split(X = np.zeros((sample_number, 1)))):
+        train_sampler = SubsetRandomSampler(train_indices)
+        val_sampler = SubsetRandomSampler(list())
+        test_sampler = SubsetRandomSampler(test_indices)
+        train_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=train_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+        val_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=val_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+        test_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=test_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+
+        print('{} of {} fold \r'.format(i+1, k))
+        build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
+
+def fcv(sample_number, collate_fn, lite=False):
+    # k step forward validation
+    k=args.k
+    minimum_ratio=0.1
+    maximum_ratio=1 - 1 / k
+    fold_sample_number = math.floor(sample_number / k)
+    minimum_sample_number = round(minimum_ratio * sample_number)
+    maxmum_sample_number = round(maximum_ratio * sample_number)
+    dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
+
+    for i, split in enumerate(range(fold_sample_number, sample_number, fold_sample_number if not lite else fold_sample_number*10)):
+        if split < minimum_sample_number:
+            continue
+        if split > maxmum_sample_number:
+            break
+        
+        print("Training end in %s out of %s \r" % (split, sample_number))
+
+        total_size = len(dataset)
+        indices = list(range(total_size))
+        train_sampler = SubsetRandomSampler(indices[:split])
+        val_sampler = SubsetRandomSampler(list())
+        test_sampler = SubsetRandomSampler(indices[split:split+fold_sample_number])
+
+        train_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=train_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+        val_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=val_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+        test_loader = DataLoader(dataset, batch_size=args.batch_size,
+                                sampler=test_sampler,
+                                num_workers=args.workers,
+                                collate_fn=collate_fn, pin_memory=False)
+
+        build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
 
 def build_model(dataset, collate_fn, train_loader, val_loader, test_loader):
     global args, best_mae_error
@@ -269,7 +281,13 @@ def build_model(dataset, collate_fn, train_loader, val_loader, test_loader):
 
     for epoch in range(args.start_epoch, args.epochs):
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, normalizer)
+        reg_sched = 0.2
+        reg_sched_epoch = math.floor(args.epochs * reg_sched)
+
+        if not args.hybrid or epoch <= reg_sched_epoch:
+            train(train_loader, model, criterion, optimizer, epoch, normalizer, l1_reg=False)
+        else:
+            train(train_loader, model, criterion, optimizer, epoch, normalizer, l1_reg=True)
 
         # evaluate on validation set
         mae_error = validate(val_loader, model, criterion, normalizer)
@@ -308,7 +326,7 @@ def build_model(dataset, collate_fn, train_loader, val_loader, test_loader):
     
     # remove_checkpoint()
 
-def train(train_loader, model, criterion, optimizer, epoch, normalizer):
+def train(train_loader, model, criterion, optimizer, epoch, normalizer, l1_reg=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -351,7 +369,13 @@ def train(train_loader, model, criterion, optimizer, epoch, normalizer):
 
         # compute output
         output = model(*input_var)
-        loss = criterion(output, target_var)
+        if not l1_reg:
+            loss = criterion(output, target_var)
+        else:
+            l1_regularization = torch.tensor(0)
+            for param in model.parameters():
+                l1_regularization += torch.norm(param, 1)
+            loss = criterion(output, target_var) + l1_regularization
 
         # measure accuracy and record loss
         if args.task == 'regression':
