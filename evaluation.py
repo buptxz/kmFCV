@@ -567,7 +567,7 @@ def mlp(input_dim):
     
     return model
 
-def elemnet(input_dim, l1_reg=True):
+def elemnet(input_dim, l1_reg=False):
     model = Sequential()
     model.add(Dense(1024, input_dim=input_dim, kernel_initializer='normal', activation='relu'))
     model.add(Dense(1024, kernel_initializer='normal', activation='relu'))
