@@ -2,6 +2,13 @@
 # coding: utf-8
 
 # # Evaluation of extrapolation performances of materials properties prediction
+import os
+import math
+import pandas as pd
+import numpy as np
+import sys
+import csv
+import subprocess
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
 import logging
 logging.getLogger("tensorflow").setLevel(logging.WARNING)
@@ -9,14 +16,6 @@ import argparse
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore")
-    
-import math
-import pandas as pd
-import numpy as np
-import os
-import sys
-import csv
-import subprocess
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
