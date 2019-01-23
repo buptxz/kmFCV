@@ -382,7 +382,7 @@ def train(train_loader, model, criterion, optimizer, epoch, normalizer, l1_reg=F
         if not l1_reg:
             loss = criterion(output, target_var)
         else:
-            l1_regularization = torch.tensor(0)
+            l1_regularization = torch.Tensor(0)
             for param in model.parameters():
                 l1_regularization += torch.norm(param, 1)
             loss = criterion(output, target_var) + l1_regularization
@@ -390,7 +390,7 @@ def train(train_loader, model, criterion, optimizer, epoch, normalizer, l1_reg=F
         # measure accuracy and record loss
         if args.task == 'regression':
             mae_error = mae(normalizer.denorm(output.data.cpu()), target)
-            losses.update(loss.item(), target.size(0))
+            losses.update(criterion(output, target_var).item(), target.size(0))
             mae_errors.update(mae_error, target.size(0))
         else:
             accuracy, precision, recall, fscore, auc_score =\

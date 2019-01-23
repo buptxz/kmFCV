@@ -2,6 +2,9 @@
 # coding: utf-8
 
 # # Evaluation of extrapolation performances of materials properties prediction
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
+import logging
+logging.getLogger("tensorflow").setLevel(logging.WARNING)
 import argparse
 import warnings
 with warnings.catch_warnings():
@@ -132,9 +135,6 @@ def main():
                 y = y[:1000]
         
             # set the memory usage
-            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' 
-            # import logging
-            # logging.getLogger("tensorflow").setLevel(logging.WARNING)
             from keras.backend.tensorflow_backend import set_session
             import tensorflow as tf
             tf_config = tf.ConfigProto()
@@ -765,11 +765,11 @@ def hybrid_train(original_model, X_train, y_train, shape):
     start_epoch = math.floor(epochs * reg_sched)
 
     model = original_model(shape, l1_reg=False)
-    model.fit(X_train, y_train, epochs=5, batch_size=128, verbose=0)
+    model.fit(X_train, y_train, epochs=start_epoch, batch_size=128, verbose=0)
     model.save_weights('my_model_weights.h5')
     model = original_model(shape, l1_reg=True)
     model.load_weights('my_model_weights.h5')
-    model.fit(X_train, y_train, epochs=30, batch_size=128, verbose=0)
+    model.fit(X_train, y_train, epochs=epochs-start_epoch, batch_size=128, verbose=0)
     return model
 
 def cv(original_model, X, y, shape=None, k=k):
