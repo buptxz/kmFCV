@@ -24,7 +24,6 @@ from cgcnn.model import CrystalGraphConvNet
 from cgcnn.data import collate_pool, get_train_val_test_loader
 from cgcnn.data import CIFData
 
-
 parser = argparse.ArgumentParser(description='Crystal Graph Convolutional Neural Networks')
 parser.add_argument('data_options', metavar='OPTIONS', nargs='+',
                     help='dataset options, started with the path to root dir, '
@@ -105,7 +104,7 @@ def cgcnn():
     id_prop_file = os.path.join(root_dir, 'id_prop.csv')
     if args.demo == 1:
         sample_number = 1000
-        args.epochs = 1
+        args.epochs = 2
     else:
         sample_number = len(pd.read_csv(id_prop_file))
     if args.data_size:
@@ -123,9 +122,9 @@ def cgcnn():
             pin_memory=args.cuda, return_test=True)
         build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
     elif args.validation == 'cv':
-        cv(sample_number, collate_fn)
+        cv(args.k, sample_number, collate_fn)
     elif args.validation == 'fcv':
-        fcv(sample_number, collate_fn)
+        fcv(args.k, sample_number, collate_fn)
     elif args.validation == 'holdout':
         dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=None)
         train_loader, val_loader, test_loader = get_train_val_test_loader(
@@ -143,14 +142,24 @@ def cgcnn():
         #     pin_memory=args.cuda, return_test=True)
         # build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
     elif args.validation == 'iecv':
-        cv(sample_number, collate_fn)
-        fcv(sample_number, collate_fn, lite=True)
+        cv(5, sample_number, collate_fn)
+        result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
+        cv_result = evaluation_plot(result.target, result.prediction)
+
+        fcv(100, sample_number, collate_fn, lite=True)
+        result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
+        fcv_result = evaluation_plot(result.target, result.prediction)
+
+        print(cv_result[0])
+        print(fcv_result[0])
+        alpha = 0.5
+        beta = 1 - alpha
+        print(math.sqrt(alpha * cv_result[0]**2 + beta * fcv_result[0]**2))
         
-def cv(sample_number, collate_fn):
+def cv(k, sample_number, collate_fn):
     global args, best_mae_error
     seed = 7
     dataset = CIFData(*args.data_options, sample_number=sample_number, random_seed=seed)
-    k = args.k
 
     np.random.seed(seed)
     kfold = KFold(n_splits=k, shuffle=True, random_state=seed)
@@ -175,9 +184,10 @@ def cv(sample_number, collate_fn):
         print('{} of {} fold \r'.format(i+1, k))
         build_model(dataset, collate_fn, train_loader, val_loader, test_loader)
 
-def fcv(sample_number, collate_fn, lite=False):
+def fcv(k, sample_number, collate_fn, lite=False):
+    global args, best_mae_error
+
     # k step forward validation
-    k=args.k
     minimum_ratio=0.1
     maximum_ratio=1 - 1 / k
     fold_sample_number = math.floor(sample_number / k)
@@ -542,6 +552,8 @@ def validate(val_loader, model, criterion, normalizer, test=False, file_name='')
             for cif_id, target, pred in zip(test_cif_ids, test_targets,
                                             test_preds):
                 writer.writerow((cif_id, target, pred))
+        result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
+        evaluation_plot(result.target, result.prediction)
     else:
         star_label = '*'
     if args.task == 'regression':
@@ -638,6 +650,16 @@ def adjust_learning_rate(optimizer, epoch, k):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
+def evaluation_plot(y, cv_prediction):
+    y = np.array(y).ravel()
+    cv_prediction = np.array(cv_prediction).ravel()
+    
+    cv_prediction = np.nan_to_num(cv_prediction)
+    
+    mae = metrics.mean_absolute_error(y, cv_prediction)
+    r2 = metrics.r2_score(y, cv_prediction)
+    rmse = math.sqrt(metrics.mean_squared_error(y, cv_prediction))
+    return mae, rmse, r2
 
 if __name__ == '__main__':
     cgcnn()

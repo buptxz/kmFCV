@@ -45,6 +45,8 @@ parser.add_argument('--data-path', default='data',
                     'then other options')
 parser.add_argument('--demo', action='store_true', 
                     help='Quick demo mode, 1000 samples')
+parser.add_argument('--hybrid', action='store_true', 
+                    help='hybrid traning mode')
 parser.add_argument('--dataset', choices=['mp', 'supercon'],
                     default='mp', help='dataset name (default: mp)')
 parser.add_argument('--property', choices=['formation_energy', 'band_gap', 'Tc'],
@@ -59,8 +61,6 @@ parser.add_argument('--validation', choices=['cv', 'fcv', 'holdout', 'iecv'],
                     default='cv', help='validation method (default: cv)')
 parser.add_argument('--split', choices=['random', 'sorted'],
                     default='random', help='split (default: random)')
-parser.add_argument('--hybrid', action='store_true', 
-                    help='hybrid traning mode')
 parser.add_argument('-k', default=5, type=int, metavar='N',
                     help='k value (default: 5)')
 parser.add_argument('-m', default=1, type=int, metavar='N',
@@ -111,8 +111,6 @@ def main():
     if ml_method == 'cgcnn':
         subprocess.run(['python', 'cgcnn_main.py', '--demo', str(1) if quick_demo else str(0), '--hybrid', str(1) if hybrid else str(0), 
             '{}/cgcnn_{}'.format(data_folder, pred_property), '--validation', validation_type, '-k', str(k), '--epochs', str(epochs)])
-        result = pd.read_csv('cgcnn_result.csv', names=['prediction', 'target'])
-        evaluation_plot(result.target, result.prediction)
     else:
         y = None
         try:
